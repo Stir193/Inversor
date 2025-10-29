@@ -1,0 +1,71 @@
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: inversor
+      POSTGRES_PASSWORD: inversorpass
+      POSTGRES_DB: inversordb
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  backend:
+    build: ./backend
+    ports:
+      - "4000:4000"
+    volumes:
+      - ./backend:/app
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgres://inversor:inversorpass@postgres:5432/inversordb
+      - DB_SSL=false
+      - JWT_SECRET=changeme
+      - ALPHAVANTAGE_KEY=YOUR_KEY_HERE
+      - FINNHUB_KEY=YOUR_KEY_HERE
+    depends_on:
+      - postgres
+    labels:
+      - "com.example.service=backend"
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile.prod
+    depends_on:
+      - backend
+    environment:
+      - VIRTUAL_HOST=yourdomain.com
+      - LETSENCRYPT_HOST=yourdomain.com
+      - LETSENCRYPT_EMAIL=you@yourdomain.com
+    labels:
+      - "com.example.service=web"
+
+  # nginx-proxy and letsencrypt companion (automates vhost + certs)
+  nginx-proxy:
+    image: jwilder/nginx-proxy:alpine
+    container_name: nginx-proxy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/certs:/etc/nginx/certs:rw
+      - ./nginx/vhost.d:/etc/nginx/vhost.d
+      - ./nginx/html:/usr/share/nginx/html
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    restart: always
+
+  letsencrypt:
+    image: jrcs/letsencrypt-nginx-proxy-companion
+    container_name: nginx-letsencrypt
+    depends_on:
+      - nginx-proxy
+    volumes:
+      - ./nginx/certs:/etc/nginx/certs:rw
+      - ./nginx/vhost.d:/etc/nginx/vhost.d
+      - ./nginx/html:/usr/share/nginx/html
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - NGINX_PROXY_CONTAINER=nginx-proxy
+
+volumes:
+  pgdata:
